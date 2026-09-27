@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Settings · Smart Aquaculture{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-subtitle">System configuration and app information</p>
+  </div>
+</div>
+
+<div class="card card-flat mb-4">
+  <h2 class="card-title mb-3">System Configuration</h2>
+  <table class="info-table" style="width:100%;font-size:13.5px;" id="config-table">
+    <tr><td class="text-secondary" style="width:55%">Camera frame interval</td><td id="cfg-frame-interval">--</td></tr>
+    <tr><td class="text-secondary">Fish detection confidence threshold</td><td id="cfg-confidence">--</td></tr>
+    <tr><td class="text-secondary">Device offline threshold</td><td id="cfg-offline-threshold">--</td></tr>
+  </table>
+  <p class="meta-text mt-3 mb-0">These values are configured via backend environment variables (<code>.env</code>) — never hard-coded in the frontend.</p>
+</div>
+
+<div class="card card-flat">
+  <h2 class="eyebrow mb-3">About</h2>
+  <table class="info-table" style="width:100%;font-size:13.5px;">
+    <tr><td class="text-secondary" style="width:55%">App version</td><td>{{ app_version }}</td></tr>
+    <tr><td class="text-secondary">Fish detection model</td><td>{{ model_info.model }}</td></tr>
+    <tr><td class="text-secondary">Model version</td><td>{{ model_info.model_version }}</td></tr>
+    <tr><td class="text-secondary">Model status</td><td>{{ model_info.status }}</td></tr>
+    <tr><td class="text-secondary">Inference device</td><td>{{ model_info.inference_device }}</td></tr>
+  </table>
+  <p class="meta-text mt-3 mb-0">Smart Aquaculture Monitoring System — IoT and AI-based fish pond monitoring for small-scale farmers.</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

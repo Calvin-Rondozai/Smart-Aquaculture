@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Alerts · Smart Aquaculture{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Alerts</h1>
+    <p class="page-subtitle">Active warnings and configurable alert rules</p>
+  </div>
+  <div class="segmented-control" data-segmented id="filter-control">
+    <button data-value="unresolved" class="active">Active</button>
+    <button data-value="all">All</button>
+  </div>
+</div>
+
+<div class="card card-flat mb-5">
+  <ul class="list-rows" id="alerts-list">
+    <li class="list-row"><div class="skeleton" style="height:36px;width:100%;"></div></li>
+  </ul>
+</div>
+
+<div class="card card-flat">
+  <h2 class="section-title">Alert Rules</h2>
+  <p class="page-subtitle mb-4">Thresholds are stored in the database and drive all status classification and alerts (never hard-coded in the frontend).</p>
+  <div class="table-responsive">
+    <table class="table align-middle" id="thresholds-table">
+      <thead>
+        <tr class="meta-text">
+          <th>Parameter</th>
+          <th>Minimum</th>
+          <th>Maximum</th>
+          <th>Warning margin</th>
+          <th>Critical margin</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/alerts.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Smart Aquaculture{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="sidebar-brand">
+        <div class="eyebrow">Smart Aquaculture</div>
+        <h1>Monitoring System</h1>
+      </div>
+      <ul class="sidebar-nav">
+        <li><a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if active_page == 'dashboard' }}">
+          <i class="bi bi-speedometer2"></i> Dashboard</a></li>
+        <li><a href="{{ url_for('iot.water_quality_page') }}" class="{{ 'active' if active_page == 'water-quality' }}">
+          <i class="bi bi-droplet"></i> Water Quality</a></li>
+        <li><a href="{{ url_for('camera.camera_ai_page') }}" class="{{ 'active' if active_page == 'camera-ai' }}">
+          <i class="bi bi-camera-video"></i> Camera &amp; AI</a></li>
+        <li><a href="{{ url_for('analytics.analytics_page') }}" class="{{ 'active' if active_page == 'analytics' }}">
+          <i class="bi bi-graph-up"></i> Analytics</a></li>
+        <li><a href="{{ url_for('alerts.alerts_page') }}" class="{{ 'active' if active_page == 'alerts' }}">
+          <i class="bi bi-bell"></i> Alerts</a></li>
+        <li><a href="{{ url_for('devices.devices_page') }}" class="{{ 'active' if active_page == 'devices' }}">
+          <i class="bi bi-router"></i> Devices</a></li>
+        <li class="nav-divider"></li>
+        <li><a href="{{ url_for('settings.settings_page') }}" class="{{ 'active' if active_page == 'settings' }}">
+          <i class="bi bi-gear"></i> Settings</a></li>
+      </ul>
+    </nav>
+
+    <main class="main-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if active_page == 'dashboard' }}">
+      <i class="bi {{ 'bi-speedometer2' if active_page == 'dashboard' else 'bi-speedometer2' }}"></i> Dashboard</a>
+    <a href="{{ url_for('iot.water_quality_page') }}" class="{{ 'active' if active_page == 'water-quality' }}">
+      <i class="bi bi-droplet"></i> Water</a>
+    <a href="{{ url_for('camera.camera_ai_page') }}" class="{{ 'active' if active_page == 'camera-ai' }}">
+      <i class="bi bi-camera-video"></i> Camera</a>
+    <a href="{{ url_for('alerts.alerts_page') }}" class="{{ 'active' if active_page == 'alerts' }}">
+      <i class="bi bi-bell"></i> Alerts</a>
+    <a href="#" data-more-open class="{{ 'active' if active_page in ['analytics', 'devices', 'settings'] }}">
+      <i class="bi bi-three-dots"></i> More</a>
+  </nav>
+
+  <div class="more-sheet-backdrop" data-more-sheet>
+    <div class="more-sheet">
+      <div class="more-sheet-handle"></div>
+      <ul class="list-rows">
+        <li class="list-row"><a href="{{ url_for('analytics.analytics_page') }}" class="list-row-title"><i class="bi bi-graph-up me-2"></i>Analytics</a></li>
+        <li class="list-row"><a href="{{ url_for('devices.devices_page') }}" class="list-row-title"><i class="bi bi-router me-2"></i>Devices</a></li>
+        <li class="list-row"><a href="{{ url_for('settings.settings_page') }}" class="list-row-title"><i class="bi bi-gear me-2"></i>Settings</a></li>
+      </ul>
+      <button type="button" class="btn-secondary-native w-100 mt-2" data-more-close>Close</button>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

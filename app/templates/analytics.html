@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Analytics · Smart Aquaculture{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Analytics</h1>
+    <p class="page-subtitle">Cross-cutting trends and research evaluation metrics</p>
+  </div>
+  <div>
+    <div class="segmented-control" data-segmented id="range-control">
+      <button data-value="24h" class="active">24 Hours</button>
+      <button data-value="7d">7 Days</button>
+      <button data-value="30d">30 Days</button>
+      <button data-value="custom">Custom</button>
+    </div>
+    <div class="d-flex align-items-center gap-2 mt-2" id="custom-range-row" hidden>
+      <input type="date" class="form-control form-control-sm" id="custom-range-start">
+      <span class="meta-text">to</span>
+      <input type="date" class="form-control form-control-sm" id="custom-range-end">
+      <button class="btn-secondary-native" id="custom-range-apply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4" id="summary-tiles"></div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card card-flat">
+      <h2 class="card-title mb-3">Fish Count Trend</h2>
+      <div class="chart-scroll"><canvas id="chart-fish-count" height="200"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card card-flat">
+      <h2 class="card-title mb-3">Biomass Trend (kg)</h2>
+      <div class="chart-scroll"><canvas id="chart-biomass" height="200"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card card-flat">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="card-title mb-0">AI Performance / Research Evaluation</h2>
+        <span class="meta-text" id="eval-status"></span>
+      </div>
+      <div class="row g-3" id="ai-performance"></div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card card-flat">
+      <h2 class="card-title mb-3">Export Data</h2>
+      <ul class="list-rows">
+        <li class="list-row"><a href="/api/export/water-quality" class="list-row-title"><i class="bi bi-download me-2"></i>Water Quality CSV</a></li>
+        <li class="list-row"><a href="/api/export/fish-detections" class="list-row-title"><i class="bi bi-download me-2"></i>Fish Detection CSV</a></li>
+        <li class="list-row"><a href="/api/export/evaluation" class="list-row-title"><i class="bi bi-download me-2"></i>Evaluation Results CSV</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+{% endblock %}

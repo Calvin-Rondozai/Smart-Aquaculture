@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Devices · Smart Aquaculture{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Devices</h1>
+    <p class="page-subtitle">Connected sensor nodes and cameras</p>
+  </div>
+</div>
+
+<div class="card card-flat">
+  <ul class="list-rows" id="devices-list">
+    <li class="list-row"><div class="skeleton" style="height:36px;width:100%;"></div></li>
+  </ul>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/devices.js') }}"></script>
+{% endblock %}

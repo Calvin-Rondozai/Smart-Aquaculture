@@ -1,0 +1,14 @@
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+Flask-CORS==4.0.1
+python-dotenv==1.0.1
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+gunicorn==22.0.0
+
+# --- AI inference (real CFD YOLO model) ---
+# Install with: pip install ultralytics==8.4.163 torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+# (pulls the much smaller CPU-only torch wheel; omit the index flags if you have a CUDA GPU and want a GPU build instead)
+ultralytics==8.4.163
+torch==2.14.0

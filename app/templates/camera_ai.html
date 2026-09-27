@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Camera & AI · Smart Aquaculture{% endblock %}
+
+{% block extra_css %}
+<style>
+  .feed-wrap { position: relative; width: 100%; border-radius: var(--radius-md); overflow: hidden; background: var(--color-navy); aspect-ratio: 4 / 3; }
+  .feed-wrap video, .feed-wrap img, .feed-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #overlay-canvas { pointer-events: none; }
+  .info-table { width: 100%; font-size: 13.5px; }
+  .info-table td { padding: 6px 0; border-bottom: 1px solid var(--color-border); }
+  .info-table td:first-child { color: var(--color-text-secondary); width: 45%; }
+  .stub-badge { background: var(--color-light-blue); color: var(--color-primary); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Camera &amp; AI</h1>
+    <p class="page-subtitle">Live pond camera, fish detection, and analysis history</p>
+  </div>
+  <div class="segmented-control" data-segmented id="view-control">
+    <button data-value="live" class="active">Live</button>
+    <button data-value="history">History</button>
+  </div>
+</div>
+
+<div id="live-view">
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="card card-flat">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="card-title mb-0">Live Pond Camera</h2>
+          <div class="d-flex gap-2">
+            <button class="btn-secondary-native" id="start-camera-btn"><i class="bi bi-camera-video me-1"></i>Start Camera</button>
+            <button class="btn-primary-native" id="toggle-analysis-btn" disabled><i class="bi bi-play-fill me-1"></i>Start Live Analysis</button>
+          </div>
+        </div>
+        <div class="feed-wrap" id="feed-wrap">
+          <div class="d-flex align-items-center justify-content-center h-100 text-white-50" id="feed-placeholder">
+            <span>Camera not started</span>
+          </div>
+          <video id="webcam-video" autoplay playsinline muted hidden></video>
+          <img id="fallback-img" hidden alt="Pond camera feed">
+          <canvas id="overlay-canvas" hidden></canvas>
+        </div>
+        <div class="row g-3 mt-1 meta-text">
+          <div class="col-6 col-md-3">Camera: <span id="cam-device">Pond Camera 01</span></div>
+          <div class="col-6 col-md-3">Status: <span id="cam-status">Disconnected</span></div>
+          <div class="col-6 col-md-3">Resolution: <span id="cam-resolution">--</span></div>
+          <div class="col-6 col-md-3">Analysis: <span id="cam-analysis-state">Off</span></div>
+        </div>
+        <hr>
+        <div class="row g-3">
+          <div class="col-6 col-md-3"><div class="meta-text">Fish detected</div><div class="metric-value" style="font-size:22px" id="live-fish-count">--</div></div>
+          <div class="col-6 col-md-3"><div class="meta-text">Estimated population</div><div class="metric-value" style="font-size:22px" id="live-population">--</div></div>
+          <div class="col-6 col-md-3"><div class="meta-text">Inference time</div><div class="metric-value" style="font-size:22px" id="live-inference-time">--</div></div>
+          <div class="col-6 col-md-3"><div class="meta-text">Confidence</div><div class="metric-value" style="font-size:22px" id="live-confidence">--</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card card-flat mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="card-title mb-0">Model Info</h2>
+          <span class="stub-badge" id="stub-badge" hidden>Dev placeholder</span>
+        </div>
+        <table class="info-table">
+          <tr><td>Model</td><td id="model-name">--</td></tr>
+          <tr><td>Task</td><td>Fish Detection</td></tr>
+          <tr><td>Status</td><td id="model-status">--</td></tr>
+          <tr><td>Inference Device</td><td id="model-device">--</td></tr>
+          <tr><td>Model Version</td><td id="model-version">--</td></tr>
+        </table>
+      </div>
+
+      <div class="card card-flat">
+        <h2 class="card-title mb-3">Latest Analysis</h2>
+        <div id="latest-analysis">
+          <div class="empty-state">No AI analyses yet.<br>Capture or upload a pond image to begin fish detection.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="history-view" hidden>
+  <div class="card card-flat">
+    <h2 class="card-title mb-3">Analysis History</h2>
+    <ul class="list-rows" id="analysis-history"></ul>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+{% endblock %}

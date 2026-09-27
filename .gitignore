@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+instance/*.db
+storage/camera/*
+storage/processed/*
+storage/exports/*
+!storage/camera/.gitkeep
+!storage/processed/.gitkeep
+!storage/exports/.gitkeep
+models/fish_detection/*.pt
+.venv/
+venv/
+*.log
