@@ -4,43 +4,55 @@ frames.
 Detection alone re-identifies nothing between frames — the same fish
 swimming past the camera would otherwise be counted again on every
 analysis, inflating any trend or population estimate built on raw counts.
-This assigns a persistent `track_id` to each detection using greedy IoU
-matching against the previous frames' tracks (a minimal SORT-style
-tracker, no Kalman filter/motion model — adequate for the ~3s analysis
-cadence used here, since real fish don't move far frame-to-frame at that
-rate). Track IDs are then the basis for a real "unique individuals seen"
-population estimate (PRD Section 15) instead of a naive average of
-per-frame counts.
+This assigns a persistent `track_id` to each detection by matching
+against the previous analyses' tracks. Track IDs are then the basis for
+a real "unique individuals seen" population estimate (PRD Section 15)
+instead of a naive average of per-frame counts.
+
+Matching is by normalized centroid distance, not IoU. IoU degrades to
+zero very quickly once a box moves by roughly its own size — fine for
+30fps video, but analyses here are seconds apart (CPU inference on a
+large model), so a fish can easily move further than its own body
+length between two consecutive analyses despite being the same fish.
+Distance is normalized by the boxes' own size, so a fast-moving large
+fish and a slow-moving small fish are judged on the same relative scale
+rather than a fixed pixel radius.
 
 Works identically regardless of which detector backend produced the
 boxes (stub or CFD), since tracking only needs bounding boxes.
 """
+import math
 import threading
 
 
-def _iou(a, b):
-    x1 = max(a["x1"], b["x1"])
-    y1 = max(a["y1"], b["y1"])
-    x2 = min(a["x2"], b["x2"])
-    y2 = min(a["y2"], b["y2"])
+def _centroid(box):
+    return ((box["x1"] + box["x2"]) / 2.0, (box["y1"] + box["y2"]) / 2.0)
 
-    inter_w = max(0.0, x2 - x1)
-    inter_h = max(0.0, y2 - y1)
-    intersection = inter_w * inter_h
-    if intersection <= 0:
-        return 0.0
 
-    area_a = max(0.0, a["x2"] - a["x1"]) * max(0.0, a["y2"] - a["y1"])
-    area_b = max(0.0, b["x2"] - b["x1"]) * max(0.0, b["y2"] - b["y1"])
-    union = area_a + area_b - intersection
-    return intersection / union if union > 0 else 0.0
+def _diagonal(box):
+    return math.hypot(box["x2"] - box["x1"], box["y2"] - box["y1"])
+
+
+def _normalized_distance(a, b):
+    """Centroid distance divided by the average box diagonal — a value
+    around 1.0 means the centers moved about one fish-length apart."""
+    ax, ay = _centroid(a)
+    bx, by = _centroid(b)
+    distance = math.hypot(ax - bx, ay - by)
+    scale = max(1.0, (_diagonal(a) + _diagonal(b)) / 2.0)
+    return distance / scale
 
 
 class FishTracker:
-    def __init__(self, iou_threshold=0.3, max_age=3):
+    def __init__(self, max_normalized_distance=2.5, max_age=6):
         self._lock = threading.Lock()
-        self._iou_threshold = iou_threshold
-        self._max_age = max_age  # consecutive missed frames before a track is dropped
+        # How many fish-lengths a centroid may move between analyses and
+        # still be considered the same fish. Generous on purpose: at a
+        # multi-second analysis cadence a fish can easily cross this much
+        # of the frame, and a missed continuation (new ID) hurts the
+        # "track it as it moves" goal more than an occasional wrong match.
+        self._max_normalized_distance = max_normalized_distance
+        self._max_age = max_age  # consecutive missed analyses before a track is dropped
         self._next_id = 1
         self._tracks = {}  # track_id -> {"bbox": {...}, "age": int}
 
@@ -57,28 +69,36 @@ class FishTracker:
             unmatched_track_ids = set(self._tracks.keys())
             results = []
 
-            for detection in detections:
-                best_track_id = None
-                best_iou = self._iou_threshold
-
+            # Greedy nearest-neighbour: process closest pairs first so one
+            # detection can't steal another's better match.
+            candidates = []
+            for i, detection in enumerate(detections):
                 for track_id in unmatched_track_ids:
-                    score = _iou(detection, self._tracks[track_id]["bbox"])
-                    if score > best_iou:
-                        best_iou = score
-                        best_track_id = track_id
+                    dist = _normalized_distance(detection, self._tracks[track_id]["bbox"])
+                    if dist <= self._max_normalized_distance:
+                        candidates.append((dist, i, track_id))
+            candidates.sort(key=lambda c: c[0])
 
-                if best_track_id is not None:
-                    unmatched_track_ids.discard(best_track_id)
-                    self._tracks[best_track_id] = {"bbox": detection, "age": 0}
-                    track_id = best_track_id
+            assigned_track_id = {}
+            claimed_tracks = set()
+            for dist, i, track_id in candidates:
+                if i in assigned_track_id or track_id in claimed_tracks:
+                    continue
+                assigned_track_id[i] = track_id
+                claimed_tracks.add(track_id)
+
+            for i, detection in enumerate(detections):
+                track_id = assigned_track_id.get(i)
+                if track_id is not None:
+                    unmatched_track_ids.discard(track_id)
                 else:
                     track_id = self._next_id
                     self._next_id += 1
-                    self._tracks[track_id] = {"bbox": detection, "age": 0}
 
+                self._tracks[track_id] = {"bbox": detection, "age": 0}
                 results.append({**detection, "track_id": track_id})
 
-            # Age out tracks that had no match this frame; drop once stale.
+            # Age out tracks that had no match this analysis; drop once stale.
             for track_id in unmatched_track_ids:
                 self._tracks[track_id]["age"] += 1
             self._tracks = {

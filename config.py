@@ -29,13 +29,15 @@ class Config:
         "FISH_DETECTION_MODEL_PATH", "models/fish_detection/cfd-yolov12x-1.00.pt"
     )
     FISH_DETECTION_CONFIDENCE_THRESHOLD = float(
-        os.environ.get("FISH_DETECTION_CONFIDENCE_THRESHOLD", "0.50")
+        os.environ.get("FISH_DETECTION_CONFIDENCE_THRESHOLD", "0.25")
     )
     FISH_DETECTION_BACKEND = os.environ.get("FISH_DETECTION_BACKEND", "stub")
-    # Lower than YOLO's native 1024 training size by default — the "x" model
-    # variant is slow on CPU-only hardware (Section 48: avoid blocking Flask
-    # requests with long inference calls); raise this if a GPU is available.
-    FISH_DETECTION_IMGSZ = int(os.environ.get("FISH_DETECTION_IMGSZ", "640"))
+    # 1024 = the model's native training resolution (best recall). The "x"
+    # model variant is slow on CPU-only hardware (Section 48: avoid blocking
+    # Flask requests with long inference calls) — drop this if you need
+    # faster updates more than maximum recall, or raise imgsz further only
+    # if you have a GPU.
+    FISH_DETECTION_IMGSZ = int(os.environ.get("FISH_DETECTION_IMGSZ", "1024"))
 
     CAMERA_FRAME_INTERVAL = int(os.environ.get("CAMERA_FRAME_INTERVAL", "5"))
     MAX_IMAGE_UPLOAD_MB = int(os.environ.get("MAX_IMAGE_UPLOAD_MB", "8"))

@@ -1,7 +1,13 @@
 (function () {
-  const FRAME_PUSH_INTERVAL_MS = 2000;
-  const ANALYSIS_GAP_MS = 1500; // pause between one analysis finishing and the next starting
-  const FALLBACK_POLL_INTERVAL_MS = 2000;
+  const FRAME_PUSH_INTERVAL_MS = 1000;
+  // Minimal yield between one analysis finishing and the next starting —
+  // not a deliberate slowdown. Inference itself (seconds, on CPU) is the
+  // real pace-setter; this only stops the browser hammering the backend
+  // with zero gap. Real-time tracking is capped by inference speed, not
+  // this constant — there is no way to make CPU inference faster from
+  // the frontend.
+  const ANALYSIS_GAP_MS = 150;
+  const FALLBACK_POLL_INTERVAL_MS = 1000;
 
   const video = document.getElementById("webcam-video");
   const fallbackImg = document.getElementById("fallback-img");
@@ -124,23 +130,27 @@
     });
   }
 
-  function renderLatestAnalysis(result) {
+  function renderLatestAnalysis(result, { drawLiveOverlay } = { drawLiveOverlay: true }) {
     document.getElementById("live-fish-count").textContent = result.fish_count;
     document.getElementById("live-inference-time").textContent = `${result.inference_time_ms} ms`;
     document.getElementById("live-confidence").textContent =
       result.average_confidence !== null ? `${Math.round(result.average_confidence * 100)}%` : "--";
 
-    const scaleX = overlayCanvas.width / captureSize.width || 1;
-    const scaleY = overlayCanvas.height / captureSize.height || 1;
-    const scaled = (result.detections || []).map((d) => ({
-      ...d,
-      x1: d.x1 * scaleX, y1: d.y1 * scaleY, x2: d.x2 * scaleX, y2: d.y2 * scaleY,
-    }));
-    drawOverlay(scaled);
+    // Boxes are drawn directly on the live video feed, not on a separate
+    // captured image — the camera view always shows the real, continuous
+    // feed, with the AI overlay tracking on top of it.
+    if (drawLiveOverlay && !overlayCanvas.hidden) {
+      const scaleX = overlayCanvas.width / captureSize.width || 1;
+      const scaleY = overlayCanvas.height / captureSize.height || 1;
+      const scaled = (result.detections || []).map((d) => ({
+        ...d,
+        x1: d.x1 * scaleX, y1: d.y1 * scaleY, x2: d.x2 * scaleX, y2: d.y2 * scaleY,
+      }));
+      drawOverlay(scaled);
+    }
 
     const panel = document.getElementById("latest-analysis");
     panel.innerHTML = `
-      <img src="${result.image_url}?t=${Date.now()}" alt="Latest annotated analysis" style="width:100%;border-radius:10px;margin-bottom:12px;">
       <div class="row g-2 meta-text">
         <div class="col-6">Fish count: <strong>${result.fish_count}</strong></div>
         <div class="col-6">Avg confidence: <strong>${result.average_confidence !== null ? Math.round(result.average_confidence * 100) + "%" : "--"}</strong></div>
@@ -156,27 +166,7 @@
   async function loadLatestAnalysis() {
     try {
       const result = await Aqua.fetchJSON("/api/ai/latest");
-      // Only draw the overlay canvas if a live feed has sized it — otherwise
-      // just populate the stats/image, since the canvas is still hidden.
-      if (!overlayCanvas.hidden) {
-        renderLatestAnalysis(result);
-      } else {
-        document.getElementById("live-fish-count").textContent = result.fish_count;
-        document.getElementById("live-inference-time").textContent = `${result.inference_time_ms} ms`;
-        document.getElementById("live-confidence").textContent =
-          result.average_confidence !== null ? `${Math.round(result.average_confidence * 100)}%` : "--";
-        document.getElementById("latest-analysis").innerHTML = `
-          <img src="${result.image_url}" alt="Latest annotated analysis" style="width:100%;border-radius:10px;margin-bottom:12px;">
-          <div class="row g-2 meta-text">
-            <div class="col-6">Fish count: <strong>${result.fish_count}</strong></div>
-            <div class="col-6">Avg confidence: <strong>${result.average_confidence !== null ? Math.round(result.average_confidence * 100) + "%" : "--"}</strong></div>
-            <div class="col-6">Inference time: <strong>${result.inference_time_ms} ms</strong></div>
-            <div class="col-6">Biomass: <strong>${result.biomass && result.biomass.estimated_biomass !== null ? result.biomass.estimated_biomass + " kg" : "Unavailable"}</strong></div>
-          </div>
-          <div class="meta-text mt-2">${Aqua.formatDateTime(result.created_at)}</div>
-        `;
-        if (result.model_info) applyModelInfo(result.model_info);
-      }
+      renderLatestAnalysis(result);
     } catch (err) {
       /* no analyses yet — template's empty state stays as-is */
     }
@@ -239,6 +229,7 @@
         .map(
           (d) => `
         <li class="list-row">
+          <img src="${d.image_url}" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:6px;flex-shrink:0;">
           <div class="list-row-main">
             <div class="list-row-title">${Aqua.formatDateTime(d.created_at)}</div>
             <div class="list-row-meta">Fish: ${d.fish_count} · Confidence: ${d.average_confidence !== null ? Math.round(d.average_confidence * 100) + "%" : "--"} · Biomass: ${d.biomass && d.biomass.estimated_biomass !== null ? d.biomass.estimated_biomass + " kg" : "Unavailable"}</div>
