@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from app.extensions import db
@@ -46,6 +47,11 @@ class DetectionObject(db.Model):
     x2 = db.Column(db.Float, nullable=False)
     y2 = db.Column(db.Float, nullable=False)
     track_id = db.Column(db.Integer, nullable=True, index=True)
+    # Raw [[x,y], ...] pixel coordinates from a pose-capable detector (e.g.
+    # the tilapia backend), stored for future biomass calibration work.
+    # No length/weight formula is derived from these yet — see
+    # TilapiaPoseDetector's docstring for why.
+    keypoints_json = db.Column(db.Text, nullable=True)
 
     def to_dict(self):
         return {
@@ -56,4 +62,5 @@ class DetectionObject(db.Model):
             "x2": self.x2,
             "y2": self.y2,
             "track_id": self.track_id,
+            "keypoints": json.loads(self.keypoints_json) if self.keypoints_json else None,
         }

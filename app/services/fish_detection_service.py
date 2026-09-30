@@ -82,14 +82,13 @@ class StubDetector(BaseDetector):
         return detections, inference_time_ms
 
 
-class CFDDetector(BaseDetector):
-    """Real detector: Community Fish Detector (YOLOv12x via ultralytics).
-    Requires `pip install ultralytics torch` and downloaded weights at
-    FISH_DETECTION_MODEL_PATH. See Section 13 of the PRD.
+class UltralyticsDetectorBase(BaseDetector):
+    """Shared loading plumbing for any ultralytics-format (.pt) detector:
+    optional OpenVINO + Intel-GPU acceleration with an automatic CPU
+    fallback. Subclasses set `name`/`version`; `predict()` is only
+    inherited as-is by detectors that don't need extra per-detection
+    fields (e.g. keypoints) — see TilapiaPoseDetector for one that does.
     """
-
-    name = "Community Fish Detector (CFD)"
-    version = "yolov12x-1.00"
 
     def __init__(self, model_path, confidence_threshold, imgsz=640):
         self.model_path = model_path
@@ -159,6 +158,67 @@ class CFDDetector(BaseDetector):
         return detections, inference_time_ms
 
 
+class CFDDetector(UltralyticsDetectorBase):
+    """Real detector: Community Fish Detector (YOLOv12x via ultralytics).
+    Requires `pip install ultralytics torch` and downloaded weights at
+    FISH_DETECTION_MODEL_PATH. See Section 13 of the PRD.
+    """
+
+    name = "Community Fish Detector (CFD)"
+    version = "yolov12x-1.00"
+
+
+class TilapiaPoseDetector(UltralyticsDetectorBase):
+    """Tilapia-specific YOLOv8-pose detector — single class "fish", trained
+    specifically on the species this project targets (unlike CFD's broad
+    multi-dataset marine/freshwater mix). Sourced from a personal
+    HuggingFace upload (Raniahossam33/Fish-Counting) with NO declared
+    license and no published detection accuracy — statically vetted
+    (pickle opcode inspection: only ordinary torch/ultralytics/dill
+    model-reconstruction references, no code-execution primitives) before
+    ever being loaded, but not otherwise verified. Treat as an unverified,
+    unlicensed prototype option: fine to evaluate here, not cleared for a
+    real deployment or redistribution without contacting the author.
+
+    Also emits per-fish keypoints (nose/tail-ish points, 4 per detection)
+    intended for length estimation — stored (`detection_objects.keypoints`)
+    for future biomass calibration work, but no length/weight formula is
+    computed from them yet: the author's card states a keypoint precision
+    but never publishes the actual length/weight conversion, so inventing
+    one here would violate the project's "never fabricate an estimate" rule.
+    """
+
+    name = "Tilapia Pose Detector (unverified, unlicensed prototype)"
+    version = "yolov8n-pose"
+
+    def predict(self, image_bgr):
+        start = time.time()
+        results = self._model.predict(
+            source=image_bgr, imgsz=self.imgsz, device=self._predict_device, verbose=False
+        )
+        detections = []
+        for result in results:
+            keypoints_xy = result.keypoints.xy if result.keypoints is not None else None
+            for i, box in enumerate(result.boxes):
+                confidence = float(box.conf[0])
+                if confidence < self.confidence_threshold:
+                    continue
+                x1, y1, x2, y2 = [float(v) for v in box.xyxy[0]]
+                detection = {
+                    "class": "fish",
+                    "confidence": round(confidence, 3),
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                }
+                if keypoints_xy is not None and i < len(keypoints_xy):
+                    detection["keypoints"] = [[round(float(x), 1), round(float(y), 1)] for x, y in keypoints_xy[i]]
+                detections.append(detection)
+        inference_time_ms = (time.time() - start) * 1000
+        return detections, inference_time_ms
+
+
 class FishDetectionService:
     def __init__(self):
         self._detector = None
@@ -173,6 +233,12 @@ class FishDetectionService:
         if backend == "cfd":
             self._detector = CFDDetector(
                 app.config["FISH_DETECTION_MODEL_PATH"],
+                self._confidence_threshold,
+                imgsz=app.config["FISH_DETECTION_IMGSZ"],
+            )
+        elif backend == "tilapia":
+            self._detector = TilapiaPoseDetector(
+                app.config["TILAPIA_MODEL_PATH"],
                 self._confidence_threshold,
                 imgsz=app.config["FISH_DETECTION_IMGSZ"],
             )
@@ -194,6 +260,7 @@ class FishDetectionService:
             "inference_device": self._detector.device if self._detector else "-",
             "model_version": self._detector.version if self._detector else "-",
             "is_stub": isinstance(self._detector, StubDetector),
+            "unverified": isinstance(self._detector, TilapiaPoseDetector),
         }
 
     def analyse(self, image_bgr):

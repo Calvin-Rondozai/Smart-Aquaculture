@@ -1,3 +1,4 @@
+import json
 import time
 
 from flask import Blueprint, Response, current_app, jsonify, render_template, request
@@ -167,6 +168,7 @@ def post_ai_analyse():
                 x2=det["x2"],
                 y2=det["y2"],
                 track_id=det["track_id"],
+                keypoints_json=json.dumps(det["keypoints"]) if det.get("keypoints") else None,
             )
         )
 

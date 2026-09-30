@@ -64,8 +64,10 @@ def _seed_default_thresholds(db, Threshold):
 
 def _init_fish_detection(app):
     from app.services.fish_detection_service import fish_detection_service
+    from app.services.tracking_service import fish_tracker
 
     fish_detection_service.init_app(app)  # loaded once at startup — never per-request
+    fish_tracker.init_app(app)
 
 
 def _register_error_handlers(app):

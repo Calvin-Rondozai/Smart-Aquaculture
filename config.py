@@ -32,6 +32,11 @@ class Config:
         os.environ.get("FISH_DETECTION_CONFIDENCE_THRESHOLD", "0.25")
     )
     FISH_DETECTION_BACKEND = os.environ.get("FISH_DETECTION_BACKEND", "stub")
+    # Unverified/unlicensed prototype option — see TilapiaPoseDetector's
+    # docstring before using this outside local evaluation.
+    TILAPIA_MODEL_PATH = os.environ.get(
+        "TILAPIA_MODEL_PATH", "models/fish_detection/tilapia-pose-yolov8n.pt"
+    )
     # 1024 = the model's native training resolution (best recall). The "x"
     # model variant is slow on CPU-only hardware (Section 48: avoid blocking
     # Flask requests with long inference calls) — drop this if you need

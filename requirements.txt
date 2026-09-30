@@ -22,3 +22,7 @@ torch==2.14.0
 # The app auto-detects the exported model + an Intel GPU at startup and uses
 # it automatically; otherwise it falls back to the plain .pt on CPU.
 openvino
+
+# --- Multi-object tracking (real ByteTrack, not a hand-rolled tracker) ---
+supervision==0.30.6
+trackers==2.6.1

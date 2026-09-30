@@ -28,6 +28,8 @@ def draw_detections(image_bgr, detections, color=(246, 130, 59)):
     for d in detections:
         x1, y1, x2, y2 = int(d["x1"]), int(d["y1"]), int(d["x2"]), int(d["y2"])
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 1)
+        for kx, ky in d.get("keypoints") or []:
+            cv2.circle(annotated, (int(kx), int(ky)), 3, color, -1)
         label = f"#{d['track_id']} {d['confidence']:.0%}" if d.get("track_id") is not None else f"{d['confidence']:.0%}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         cv2.rectangle(annotated, (x1, max(0, y1 - th - 6)), (x1 + tw + 6, y1), color, -1)

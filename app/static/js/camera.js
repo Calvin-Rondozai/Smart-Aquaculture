@@ -206,6 +206,7 @@
     document.getElementById("model-device").textContent = info.inference_device;
     document.getElementById("model-version").textContent = info.model_version;
     document.getElementById("stub-badge").hidden = !info.is_stub;
+    document.getElementById("unverified-badge").hidden = !info.unverified;
   }
 
   async function loadModelInfo() {

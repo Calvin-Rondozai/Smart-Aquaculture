@@ -1,110 +1,123 @@
 """Multi-object tracking for detected fish across consecutive analysed
-frames.
+frames, using the `trackers` package's ByteTrackTracker (a real Kalman
+filter based multi-object tracker), instead of a hand-rolled heuristic.
 
 Detection alone re-identifies nothing between frames — the same fish
 swimming past the camera would otherwise be counted again on every
 analysis, inflating any trend or population estimate built on raw counts.
-This assigns a persistent `track_id` to each detection by matching
-against the previous analyses' tracks. Track IDs are then the basis for
-a real "unique individuals seen" population estimate (PRD Section 15)
-instead of a naive average of per-frame counts.
+This assigns a persistent `track_id` to each detection, which is the
+basis for a real "unique individuals seen" population estimate (PRD
+Section 15) instead of a naive average of per-frame counts.
 
-Matching is by normalized centroid distance, not IoU. IoU degrades to
-zero very quickly once a box moves by roughly its own size — fine for
-30fps video, but analyses here are seconds apart (CPU inference on a
-large model), so a fish can easily move further than its own body
-length between two consecutive analyses despite being the same fish.
-Distance is normalized by the boxes' own size, so a fast-moving large
-fish and a slow-moving small fish are judged on the same relative scale
-rather than a fixed pixel radius.
+Why `trackers.ByteTrackTracker` rather than `supervision.ByteTrack`: the
+copy bundled in `supervision` is deprecated (removed as of v0.31.0) in
+favour of this dedicated package, per supervision's own docs. `trackers`
+is passed real wall-clock timestamps per update (not an assumed fixed
+frame rate), so its Kalman motion model correctly accounts for the
+actual (often multi-second, CPU-inference-bound) gap between analyses
+rather than assuming 30fps video.
 
 Works identically regardless of which detector backend produced the
-boxes (stub or CFD), since tracking only needs bounding boxes.
+boxes (stub, CFD, or the tilapia pose model), since tracking only needs
+bounding boxes + confidence.
 """
-import math
 import threading
+import time
 
-
-def _centroid(box):
-    return ((box["x1"] + box["x2"]) / 2.0, (box["y1"] + box["y2"]) / 2.0)
-
-
-def _diagonal(box):
-    return math.hypot(box["x2"] - box["x1"], box["y2"] - box["y1"])
-
-
-def _normalized_distance(a, b):
-    """Centroid distance divided by the average box diagonal — a value
-    around 1.0 means the centers moved about one fish-length apart."""
-    ax, ay = _centroid(a)
-    bx, by = _centroid(b)
-    distance = math.hypot(ax - bx, ay - by)
-    scale = max(1.0, (_diagonal(a) + _diagonal(b)) / 2.0)
-    return distance / scale
+import numpy as np
+import supervision as sv
+from trackers import ByteTrackTracker
 
 
 class FishTracker:
-    def __init__(self, max_normalized_distance=2.5, max_age=6):
+    def __init__(
+        self,
+        track_activation_threshold=0.25,
+        # `lost_track_buffer` is internally divided by a hardcoded 30 to get
+        # a real-seconds timeout, regardless of `frame_rate` — i.e. the
+        # default (30) means a track is dropped after just ONE real second
+        # without a match. Our analyses land anywhere from ~0.7s (OpenVINO
+        # GPU) to several seconds apart (CPU fallback), so 450 (~15s) is
+        # the actual real-world tolerance we need; do not "simplify" this
+        # back toward the library's default without re-reading that math.
+        lost_track_buffer=450,
+        minimum_consecutive_frames=1,
+        minimum_iou_threshold=0.1,
+    ):
         self._lock = threading.Lock()
-        # How many fish-lengths a centroid may move between analyses and
-        # still be considered the same fish. Generous on purpose: at a
-        # multi-second analysis cadence a fish can easily cross this much
-        # of the frame, and a missed continuation (new ID) hurts the
-        # "track it as it moves" goal more than an occasional wrong match.
-        self._max_normalized_distance = max_normalized_distance
-        self._max_age = max_age  # consecutive missed analyses before a track is dropped
-        self._next_id = 1
-        self._tracks = {}  # track_id -> {"bbox": {...}, "age": int}
+        self._track_activation_threshold = track_activation_threshold
+        self._lost_track_buffer = lost_track_buffer
+        self._minimum_consecutive_frames = minimum_consecutive_frames
+        self._minimum_iou_threshold = minimum_iou_threshold
+        self._tracker = self._new_tracker()
+
+    def _new_tracker(self):
+        return ByteTrackTracker(
+            track_activation_threshold=self._track_activation_threshold,
+            lost_track_buffer=self._lost_track_buffer,
+            minimum_consecutive_frames=self._minimum_consecutive_frames,
+            minimum_iou_threshold=self._minimum_iou_threshold,
+        )
+
+    def init_app(self, app):
+        """Aligns the tracker's activation threshold with the detector's
+        confidence threshold — a detection the detector itself considers
+        too weak to count shouldn't be spawning/confirming tracks either."""
+        self._track_activation_threshold = app.config["FISH_DETECTION_CONFIDENCE_THRESHOLD"]
+        self._tracker = self._new_tracker()
 
     def reset(self):
         with self._lock:
-            self._next_id = 1
-            self._tracks = {}
+            self._tracker = self._new_tracker()
 
     def update(self, detections):
         """Matches `detections` (list of dicts with x1/y1/x2/y2/confidence)
         against existing tracks and returns the same list with a
-        `track_id` key added to each detection."""
+        `track_id` key added to each detection (None if the track hasn't
+        been confirmed yet — ByteTrack's first sighting of a new object
+        is tentative by design)."""
         with self._lock:
-            unmatched_track_ids = set(self._tracks.keys())
+            if not detections:
+                # Still advance the tracker's internal clock/aging even on
+                # an empty frame, so lost tracks age out correctly.
+                empty = sv.Detections.empty()
+                self._tracker.update(empty, timestamp=time.time())
+                return []
+
+            xyxy = np.array(
+                [[d["x1"], d["y1"], d["x2"], d["y2"]] for d in detections], dtype=np.float32
+            )
+            confidence = np.array([d["confidence"] for d in detections], dtype=np.float32)
+            class_id = np.zeros(len(detections), dtype=int)
+            # Keypoints (from a pose-capable detector) aren't part of the
+            # box geometry ByteTrack matches on, but ride along per-index
+            # via `data` so they survive the update and can be reattached.
+            has_keypoints = any("keypoints" in d for d in detections)
+            data = (
+                {"keypoints": [d.get("keypoints") for d in detections]} if has_keypoints else {}
+            )
+
+            sv_detections = sv.Detections(
+                xyxy=xyxy, confidence=confidence, class_id=class_id, data=data
+            )
+            tracked = self._tracker.update(sv_detections, timestamp=time.time())
+
             results = []
-
-            # Greedy nearest-neighbour: process closest pairs first so one
-            # detection can't steal another's better match.
-            candidates = []
-            for i, detection in enumerate(detections):
-                for track_id in unmatched_track_ids:
-                    dist = _normalized_distance(detection, self._tracks[track_id]["bbox"])
-                    if dist <= self._max_normalized_distance:
-                        candidates.append((dist, i, track_id))
-            candidates.sort(key=lambda c: c[0])
-
-            assigned_track_id = {}
-            claimed_tracks = set()
-            for dist, i, track_id in candidates:
-                if i in assigned_track_id or track_id in claimed_tracks:
-                    continue
-                assigned_track_id[i] = track_id
-                claimed_tracks.add(track_id)
-
-            for i, detection in enumerate(detections):
-                track_id = assigned_track_id.get(i)
-                if track_id is not None:
-                    unmatched_track_ids.discard(track_id)
-                else:
-                    track_id = self._next_id
-                    self._next_id += 1
-
-                self._tracks[track_id] = {"bbox": detection, "age": 0}
-                results.append({**detection, "track_id": track_id})
-
-            # Age out tracks that had no match this analysis; drop once stale.
-            for track_id in unmatched_track_ids:
-                self._tracks[track_id]["age"] += 1
-            self._tracks = {
-                tid: t for tid, t in self._tracks.items() if t["age"] <= self._max_age
-            }
-
+            for i in range(len(tracked)):
+                x1, y1, x2, y2 = [float(v) for v in tracked.xyxy[i]]
+                raw_id = int(tracked.tracker_id[i]) if tracked.tracker_id is not None else -1
+                detection = {
+                    "class": "fish",
+                    "confidence": round(float(tracked.confidence[i]), 3),
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "track_id": raw_id if raw_id >= 0 else None,
+                }
+                if has_keypoints:
+                    detection["keypoints"] = tracked.data["keypoints"][i]
+                results.append(detection)
             return results
 
 
