@@ -1,13 +1,12 @@
 (function () {
-  const FRAME_PUSH_INTERVAL_MS = 1000;
-  // Minimal yield between one analysis finishing and the next starting —
-  // not a deliberate slowdown. Inference itself (seconds, on CPU) is the
-  // real pace-setter; this only stops the browser hammering the backend
-  // with zero gap. Real-time tracking is capped by inference speed, not
-  // this constant — there is no way to make CPU inference faster from
-  // the frontend.
-  const ANALYSIS_GAP_MS = 150;
-  const FALLBACK_POLL_INTERVAL_MS = 1000;
+  // With the OpenVINO+iGPU backends, inference itself is no longer the
+  // bottleneck (~13-50ms), so how often we capture+upload a fresh frame
+  // is what actually limits how closely the overlay can follow a moving
+  // fish. Both constants are tight on purpose; only loosen them if a
+  // slower backend (e.g. CFD, ~700ms+/analysis) makes that pointless.
+  const FRAME_PUSH_INTERVAL_MS = 200;
+  const ANALYSIS_GAP_MS = 50;
+  const FALLBACK_POLL_INTERVAL_MS = 500;
 
   const video = document.getElementById("webcam-video");
   const fallbackImg = document.getElementById("fallback-img");
