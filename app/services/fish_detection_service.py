@@ -5,6 +5,7 @@ detector can be swapped (stub -> fine-tuned YOLO -> a future CFD release)
 without touching routes, templates, or JS. Routes must never import a model
 or run inference directly — only call FishDetectionService.
 """
+import os
 import threading
 import time
 
@@ -89,23 +90,54 @@ class CFDDetector(BaseDetector):
 
     name = "Community Fish Detector (CFD)"
     version = "yolov12x-1.00"
-    device = "CPU"
 
     def __init__(self, model_path, confidence_threshold, imgsz=640):
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.imgsz = imgsz
         self._model = None
+        self._predict_device = "cpu"
+        self.device = "CPU"
+
+    def _openvino_export_dir(self):
+        stem, _ = os.path.splitext(self.model_path)
+        return f"{stem}_openvino_model"
 
     def load(self):
         from ultralytics import YOLO  # imported lazily: heavy optional dependency
 
-        self._model = YOLO(self.model_path)
+        # An OpenVINO export lets this same model run on an Intel
+        # integrated GPU where present, which measured ~7x faster here
+        # than plain PyTorch on CPU at the same resolution/accuracy —
+        # OpenVINO's own *CPU* plugin measured slower than plain PyTorch
+        # CPU on this hardware, so it's only worth it for the GPU path.
+        # Falls back to the plain .pt on CPU wherever no compatible
+        # integrated/discrete GPU is available (portable to other machines).
+        openvino_dir = self._openvino_export_dir()
+        if os.path.isdir(openvino_dir) and self._openvino_gpu_available():
+            self._model = YOLO(openvino_dir)
+            self._predict_device = "intel:gpu"
+            self.device = "GPU (OpenVINO, Intel integrated graphics)"
+        else:
+            self._model = YOLO(self.model_path)
+            self._predict_device = "cpu"
+            self.device = "CPU"
         return True
+
+    @staticmethod
+    def _openvino_gpu_available():
+        try:
+            import openvino as ov
+
+            return "GPU" in ov.Core().available_devices
+        except Exception:
+            return False
 
     def predict(self, image_bgr):
         start = time.time()
-        results = self._model.predict(source=image_bgr, imgsz=self.imgsz, device="cpu", verbose=False)
+        results = self._model.predict(
+            source=image_bgr, imgsz=self.imgsz, device=self._predict_device, verbose=False
+        )
         detections = []
         for result in results:
             for box in result.boxes:

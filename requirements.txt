@@ -12,3 +12,13 @@ gunicorn==22.0.0
 # (pulls the much smaller CPU-only torch wheel; omit the index flags if you have a CUDA GPU and want a GPU build instead)
 ultralytics==8.4.163
 torch==2.14.0
+
+# --- OpenVINO (optional, big speed-up on Intel hardware) ---
+# On a machine with an Intel integrated GPU, exporting the model to OpenVINO
+# and running on the iGPU measured ~7x faster than plain PyTorch CPU at the
+# same resolution/accuracy (no accuracy trade-off — same weights). One-time
+# setup after installing this package:
+#   .venv/Scripts/python -c "from ultralytics import YOLO; YOLO('models/fish_detection/cfd-yolov12x-1.00.pt').export(format='openvino', imgsz=1024)"
+# The app auto-detects the exported model + an Intel GPU at startup and uses
+# it automatically; otherwise it falls back to the plain .pt on CPU.
+openvino
