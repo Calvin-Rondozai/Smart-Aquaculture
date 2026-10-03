@@ -117,6 +117,18 @@ class UltralyticsDetectorBase(BaseDetector):
             self._model = YOLO(openvino_dir)
             self._predict_device = "intel:gpu"
             self.device = "GPU (OpenVINO, Intel integrated graphics)"
+            # `self.imgsz` passed to predict() is IGNORED on this path: an
+            # OpenVINO export bakes in a fixed input shape at export time
+            # (see the `imgsz=` passed to `model.export(format="openvino", ...)`
+            # whenever this directory was built). If you change
+            # FISH_DETECTION_IMGSZ expecting it to take effect here, it
+            # won't — re-export at the new size instead. This bit us once:
+            # the resolution config silently did nothing for weeks while
+            # every analysis ran at whatever size the export used.
+            print(
+                f"NOTE: {openvino_dir} runs at its export-time resolution, "
+                f"not FISH_DETECTION_IMGSZ={self.imgsz} — re-export to change it."
+            )
         else:
             self._model = YOLO(self.model_path)
             self._predict_device = "cpu"
@@ -246,7 +258,20 @@ class FishDetectionService:
             self._detector = StubDetector()
 
         self._detector.load()  # load once at startup — never per-request
+        self._warm_up()
         self._loaded = True
+
+    def _warm_up(self):
+        """Runs one throwaway inference at startup. OpenVINO (especially on
+        the GPU plugin) compiles/caches kernels on first use — measured
+        ~6.9s on that first real call vs ~0.2s on the second with identical
+        input, so without this the first user-triggered analysis after a
+        (re)start eats that cost instead of it happening invisibly here."""
+        dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+        try:
+            self._detector.predict(dummy)
+        except Exception:
+            pass  # a warmup failure shouldn't block startup; the real call will surface it
 
     @property
     def is_loaded(self):

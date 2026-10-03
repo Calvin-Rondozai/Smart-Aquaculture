@@ -36,21 +36,24 @@ automatically on first run.
 The detector is fully swappable via `FISH_DETECTION_BACKEND` in `.env` — the rest of
 the app (routes, database, tracking, UI) doesn't change when you switch it.
 
-| Backend | Model | Speed (this hardware) | Accuracy | License |
+| Backend | Model | Speed (this hardware, iGPU) | Accuracy | License |
 |---|---|---|---|---|
 | `stub` | OpenCV contour analysis | instant | not ML — a real algorithm, but not species-aware | — |
-| `cfd` | [Community Fish Detector](https://github.com/filippovarini/community-fish-detector) (YOLOv12x) | ~700ms/analysis on iGPU, several seconds on CPU-only | broad multi-dataset training (1.9M+ images), not species-specific | AGPL |
-| `tilapia` | [Fish-Counting](https://huggingface.co/Raniahossam33/Fish-Counting) (YOLOv8n-pose) | ~13-40ms/analysis on iGPU | tilapia-specific, but **unverified** — no published accuracy | **none declared** |
+| `cfd` | [Community Fish Detector](https://github.com/filippovarini/community-fish-detector) (YOLOv12x) | ~180ms/analysis at 640px | **verified**: found real koi confidently (0.57-0.73 confidence) in a real pond recording | AGPL |
+| `tilapia` | [Fish-Counting](https://huggingface.co/Raniahossam33/Fish-Counting) (YOLOv8n-pose) | ~13ms/analysis | **verified NOT to work**: zero detections on that same real footage, even at confidence 0.05 — its training data apparently doesn't generalize to ornamental koi patterns | **none declared** |
 
-**Neither non-stub option is a casual choice for production.** `cfd`'s license
-(AGPL) has real copyleft implications for a closed-source deployment. `tilapia` has
-no license at all (default copyright applies — don't redistribute it or ship it in a
-closed product without contacting the author) and its detection accuracy has not been
-independently verified; it was statically vetted for safety (its pickle file was
-disassembled and inspected for dangerous opcodes before ever being loaded) but not for
-correctness. Evaluate both against your own real pond footage before trusting either
-one's counts. See the docstrings in `app/services/fish_detection_service.py` for the
-full reasoning behind each.
+`cfd` is the default for a reason: it's the one actually confirmed to detect real
+fish. `tilapia` is kept available for evaluating against genuine tilapia footage
+specifically (its one real selling point is species match), but confirm it actually
+detects something on your own footage before trusting its counts — it failed
+completely on the koi footage this was tested against. Its pickle file was statically
+vetted for safety (disassembled and inspected for dangerous opcodes before ever being
+loaded) but that says nothing about whether it can see fish.
+
+`cfd`'s license (AGPL) has real copyleft implications for a closed-source deployment;
+`tilapia` has no license at all (default copyright applies — don't redistribute it or
+ship it in a closed product without contacting the author). See the docstrings in
+`app/services/fish_detection_service.py` for the full reasoning behind each.
 
 The **stub** backend needs no model download and no GPU — good for developing the
 rest of the app without the AI dependencies installed at all.
@@ -74,13 +77,18 @@ Then download whichever model(s) you want to use into `models/fish_detection/`
 
 If your CPU has Intel integrated graphics (Iris Xe, UHD, etc.), exporting a model to
 OpenVINO and running it on the iGPU is dramatically faster than plain PyTorch on
-CPU — measured **~7x faster for CFD** (700ms vs several seconds) and **~2-3x faster
-again for the tilapia model** (13ms vs 35-90ms), with zero accuracy loss since it's
-the exact same trained weights, just a different inference runtime.
+CPU, with zero accuracy loss since it's the exact same trained weights, just a
+different inference runtime. Measured on this hardware: CFD at 640px went from
+several seconds (CPU) to ~180ms (iGPU); the tilapia model to ~13ms.
+
+**The export bakes in a fixed input resolution — `imgsz` passed to `predict()` at
+runtime is ignored on this path.** To change the effective resolution, re-export at
+the new size (delete the old `*_openvino_model/` directory first, or the old export
+keeps being used):
 
 ```bash
 pip install openvino
-python -c "from ultralytics import YOLO; YOLO('models/fish_detection/cfd-yolov12x-1.00.pt').export(format='openvino', imgsz=1024)"
+python -c "from ultralytics import YOLO; YOLO('models/fish_detection/cfd-yolov12x-1.00.pt').export(format='openvino', imgsz=640)"
 python -c "from ultralytics import YOLO; YOLO('models/fish_detection/tilapia-pose-yolov8n.pt').export(format='openvino', imgsz=640)"
 ```
 
@@ -110,13 +118,19 @@ assigning a persistent ID to each fish across analyses. This is what "Estimated
 population" is actually based on: distinct tracked individuals over the last 20
 analyses, not a naive average of per-frame counts.
 
-**Real-time performance is bounded by detector speed.** A slow backend (CFD on
-CPU-only hardware) can produce a noticeably laggy overlay when tracking a
-fast-moving fish in real video, since the analysis simply can't keep up with 24-30fps
-motion — the fish is somewhere else by the time the next result comes back. The
-`tilapia` + OpenVINO-GPU combination gets this down to roughly 7 updates/second on
-this hardware, which is a large improvement but still short of full video framerate;
-a discrete GPU or a purpose-built smaller model would close the rest of that gap.
+**Real-time performance is bounded by detector speed.** A slow backend/resolution
+(CFD at 1024px on CPU-only hardware: several seconds per analysis) produces a
+noticeably laggy overlay when tracking a fast-moving fish in real video, since the
+analysis simply can't keep up with 24-30fps motion — the fish is somewhere else by
+the time the next result comes back. CFD at 640px on the iGPU (~180ms/analysis) gets
+the live loop to roughly 4-5 updates/second in testing, which is a large improvement
+but still short of full video framerate; a discrete GPU or a smaller model that
+actually detects your fish species would close the rest of that gap.
+
+**The very first analysis after startup pays a one-time OpenVINO kernel-compilation
+cost** (measured ~6.9s on this hardware) — the service runs one throwaway inference
+at load time specifically to absorb that cost before any real request arrives, so it
+shows up as slower startup, not a slow first user-facing analysis.
 
 ## Biomass
 
@@ -155,6 +169,10 @@ firmware/       ESP32/ESP32-CAM sketches (not yet built — no hardware to test 
   `.ino` sketches have been written or tested against real hardware.
 - Biomass calibration (needs either a calibrated camera setup or ground-truth
   weight data to fit a length/weight formula against).
-- Neither AI backend's detection accuracy has been validated against real pond
-  footage from this project's actual target environment — do that before trusting
-  either one's counts for anything beyond evaluation.
+- CFD was validated against a real koi pond recording (not this project's actual
+  target species/environment — tilapia in a Zimbabwean pond). It found real fish
+  confidently there; still worth checking against the actual deployment footage
+  before trusting its counts for anything beyond evaluation. The `tilapia` backend
+  was tested against that same koi footage and found nothing at all — confirm it
+  actually detects your specific fish before relying on it, it may turn out to be
+  just as blind to your pond's fish as it was to koi.
